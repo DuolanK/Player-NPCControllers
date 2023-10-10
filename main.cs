@@ -296,3 +296,162 @@ public class SwipeController : MonoBehaviour
         isDraging = false;
     }
 }
+
+
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class NPCController : MonoBehaviour
+{
+    private bool isCollected = false;
+    private CharacterController controller;
+    private Animator anim;
+    private List<NPCController> npcList = new List<NPCController>();
+    private int lineToMove = 3;
+    private float lineDistance = 4;
+    private Vector3 previousCharacterPosition;
+
+    [SerializeField] private float moveSpeed = 5f;
+    [SerializeField] private float smoothness = 5f; // Новая переменная для плавного перемещения
+    [SerializeField] private float minDistanceToPlayer = 2f; //min distance
+
+    // Добавьте поле для ссылки на основного персонажа
+    public Transform mainCharacter;
+
+    private void Start()
+    {
+        controller = GetComponent<CharacterController>();
+        anim = GetComponent<Animator>();
+
+        // Найдите основного персонажа и сохраните его Transform
+        mainCharacter = GameObject.FindWithTag("Player").transform;
+    }
+
+    private void Update()
+    {
+        // Проверяем, есть ли основной персонаж и изменилась ли его позиция
+        if (mainCharacter != null && mainCharacter.position != previousCharacterPosition)
+        {
+            transform.position = mainCharacter.position;
+            transform.rotation = mainCharacter.rotation;
+
+            // Вычисляем направление движения основного персонажа
+            Vector3 movementDirection = mainCharacter.position - previousCharacterPosition;
+            movementDirection.y = 0; // Убираем вертикальную составляющую
+
+                        // Вычисляем расстояние между NPC и игроком
+            float distanceToPlayer = Vector3.Distance(transform.position, mainCharacter.position);
+
+            // Если расстояние меньше минимального, корректируем позицию
+            if (distanceToPlayer < minDistanceToPlayer)
+            {
+                // Вычисляем направление от NPC к игроку
+                Vector3 playerDirection = mainCharacter.position - transform.position;
+                playerDirection.y = 0f; // Убеждаемся, что направление параллельно земле
+
+                // Корректируем позицию NPC, чтобы она была на минимальном расстоянии
+                Vector3 newPosition = mainCharacter.position + playerDirection.normalized * minDistanceToPlayer;
+                transform.position = newPosition;
+            }
+
+            // Применяем это направление движения к NPC с использованием плавного перемещения
+            Vector3 targetPosition = mainCharacter.position + movementDirection.normalized * lineDistance;
+            transform.position = Vector3.Lerp(transform.position, targetPosition, Time.deltaTime * smoothness);
+
+            // Обновляем позицию NPC, чтобы не было поперечных смещений
+            transform.position = mainCharacter.position;
+
+            // Сохраняем текущую позицию основного персонажа
+            previousCharacterPosition = mainCharacter.position;
+        }
+
+        // Обработка свайпов
+        if (SwipeController.swipeRight)
+        {
+            if (lineToMove < 6) // Проверка на максимальное значение (6 линий)
+                lineToMove++;
+
+            // Изменяем направление на право
+            Vector3 moveRight = Vector3.right * lineDistance;
+            controller.Move(moveRight);
+        }
+
+        if (SwipeController.swipeLeft)
+        {
+            if (lineToMove > 0) // Проверка на минимальное значение (0 линия)
+                lineToMove--;
+
+            // Изменяем направление на лево
+            Vector3 moveLeft = Vector3.left * lineDistance;
+            controller.Move(moveLeft);
+        }
+    }
+    
+
+
+    
+    public interface ICollectable
+    {
+        void Collect();
+    }
+
+    // Метод для сбора NPC
+    public void CollectNPC()
+    {
+        // Отмечаем NPC как собранного
+        isCollected = true;
+
+        // Останавливаем движение NPC
+        // Здесь можно также включить анимацию сбора NPC
+
+        // Убираем NPC из родителя, если он был прикреплен к персонажу
+        transform.parent = null;
+    }
+
+    // Метод для проверки, собран ли NPC
+    public bool IsCollected
+    {
+        get { return isCollected; }
+    }
+
+    private void Die()
+    {
+        // Здесь вы можете выполнить действия, связанные с умиранием персонажа, например, показать панель с сообщением о проигрыше
+        anim.SetBool("npc_die", true);
+        
+    }
+
+    private void FixedUpdate()
+    {
+        // Ваша логика для FixedUpdate
+    }
+
+
+    private IEnumerator DieCoroutine()
+    {
+        // Воспроизвести анимацию смерти, если есть
+        anim.SetBool("npc_die", true);
+
+        // Ждать некоторое время перед уничтожением объекта
+        yield return new WaitForSeconds(2f); // Здесь 2f - это задержка в секундах, которую вы можете настроить под свои потребности
+
+        // Уничтожить объект NPC
+        Destroy(gameObject);
+    }
+
+    private void OnControllerColliderHit(ControllerColliderHit hit)
+    {
+        if (hit.gameObject.tag == "obstacle")
+        {   
+            StartCoroutine(DieCoroutine());
+        }
+
+    }
+
+    private void OnTriggerExit(Collider other)
+    {
+        // Ваша логика при выходе из коллайдера
+    }
+}

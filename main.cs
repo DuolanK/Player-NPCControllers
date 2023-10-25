@@ -455,3 +455,378 @@ public class NPCController : MonoBehaviour
         // Ваша логика при выходе из коллайдера
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class SwipeController : MonoBehaviour
+{
+    bool isDragging, isMobilePlatform;
+    Vector2 tapPoint, swipeDelta;
+    float minSwipeDelta = 130;
+
+    public enum SwipeType
+    {
+        LEFT,
+        RIGHT,
+        UP,
+        DOWN,
+    }
+
+    public delegate void OnSwipeInput(SwipeType type);
+    public static event OnSwipeInput SwipeEvent;
+
+    private void Awake()
+    {
+        #if UNITY_EDITOR || UNITY_STANDALONE
+            isMobilePlatform = false;
+        #else
+            isMobilePlatform = true;
+        #endif        
+    }
+
+    private void Update()
+    {
+        if (!isMobilePlatform)
+        {
+            if (Input.GetMouseButtonDown(0))
+            {
+                isDragging = true;
+                tapPoint = Input.mousePosition;
+            }
+            else if (Input.GetMouseButtonUp(0))
+                ResetSwipe();
+        }
+        else
+        {
+            if (Input.touchCount > 0)
+            {
+                if (Input.touches[0].phase == TouchPhase.Began)
+                {
+                    isDragging = true;
+                    tapPoint = Input.touches[0].position;
+                }
+                else if (Input.touches[0].phase == TouchPhase.Canceled ||
+                         Input.touches[0].phase == TouchPhase.Ended)
+                    ResetSwipe();     
+            }
+        }
+
+        CalculateSwipe();
+    }
+
+    void CalculateSwipe()
+    {
+        swipeDelta = Vector2.zero;
+
+        if (isDragging)
+        {
+            if (!isMobilePlatform && Input.GetMouseButton(0))
+                swipeDelta = (Vector2)Input.mousePosition - tapPoint;
+            else if (Input.touchCount > 0) // Change "Input.touchDown" to "Input.touchCount"
+                swipeDelta = Input.touches[0].position - tapPoint;
+        }
+
+        if (swipeDelta.magnitude > minSwipeDelta)
+        {
+            if (SwipeEvent != null) // Change "!-" to "!="
+            {
+                if (Mathf.Abs(swipeDelta.x) > Mathf.Abs(swipeDelta.y))
+                    SwipeEvent(swipeDelta.x < 0 ? SwipeType.LEFT : SwipeType.RIGHT); // Change "SwipeType.Right" to "SwipeType.RIGHT"
+                else
+                    SwipeEvent(swipeDelta.y > 0 ? SwipeType.UP : SwipeType.DOWN); // Change "SwipeType.Down" to "SwipeType.DOWN"
+            }
+            ResetSwipe();
+        }
+    }
+
+    void ResetSwipe()
+    {
+        isDragging = false;
+        tapPoint = swipeDelta = Vector2.zero;
+    }
+}    
+
+
+
+
+
+
+
+
+
+
+
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class PlayerController : MonoBehaviour
+{   
+    private CharacterController controller;
+    Vector3 moveVec;
+    private Animator anim;
+    [SerializeField] private int coins;
+    [SerializeField] private GameObject losePanel;
+    [SerializeField] private GameObject winPanel;
+    [SerializeField] private Text coinsText;
+    [SerializeField] private GameObject PlayerModel;
+    [SerializeField] private float jumpForce;
+    [SerializeField] private float gravity;
+    private int lineToMove = 3;
+    private float lineDistance = 4;
+    private bool isSliding;
+    private List<NPCController> npcList = new List<NPCController>();
+    public int liveNPCCount;
+    private bool isAlive = false;
+    private bool gameStarted = false;
+    public AudioSource audioSource; // Ссылка на компонент AudioSource
+
+    public float speed = 10, jumspeed = 12;
+
+    int laneNumber = 1,
+        lanesCount = 8;
+
+    public float FirstLanePos,
+                 LaneDistance,
+                 SideSpeed;    
+
+
+    // Start is called before the first frame update
+    void Start()
+    {   
+                // Получить компонент CapsuleCollider
+        anim = GetComponentInChildren<Animator>();
+        controller = GetComponent<CharacterController>();
+        Time.timeScale = 1;
+
+        // // Устанавливаем начальную позицию ближе к центру экрана
+        // Vector3 startPosition = transform.position;
+        // startPosition.x = 1f; // Измените значение X на то, которое соответствует центру
+        // transform.position = startPosition;
+        gameStarted = false;
+        audioSource = GetComponent<AudioSource>();
+        SwipeController.SwipeEvent += CheckInput;
+        moveVec = new Vector3(0, 0, speed);
+    }
+
+    private void Update()
+    {   
+        if (!gameStarted)
+        {
+            // Проверяем первый свайп вправо
+            if (laneNumber>1)
+            {
+                // Включаем движение после первого свайпа вправо
+                StartCoroutine(GoStartCoroutine());
+                Camera.main.GetComponent<CameraController>().isFixedUpdateEnabled = true; 
+            }
+        }
+        moveVec.z = speed;
+        controller.Move(moveVec * Time.fixedDeltaTime);
+        Vector3 newPos = transform.position;
+        newPos.x = Mathf.Lerp(newPos.x, FirstLanePos + (laneNumber * LaneDistance), Time.deltaTime * SideSpeed);
+        transform.position = newPos;
+
+        
+    }
+
+    void CheckInput(SwipeController.SwipeType type)
+    {
+        // if (isGrounded() && !isRolling)
+        // {
+        //     if (input.GetAxisRaw("Vertical") <0)
+        //      StartCoroutine(DoRoll());
+        // }
+
+        int sign = 0;
+
+        if (type == SwipeController.SwipeType.LEFT)
+            sign = -1;
+        else if (type == SwipeController.SwipeType.RIGHT)
+            sign = 1;
+        else 
+            return;
+
+        laneNumber += sign;
+        laneNumber = Mathf.Clamp(laneNumber, 0, lanesCount); 
+        if (laneNumber > 1)
+        {
+            Debug.Log("Right");
+        }
+        if (laneNumber < 1)
+        {
+            Debug.Log("LEFT");
+        }       
+    }
+
+    bool isGrounded()
+    {
+        return Physics.Raycast(transform.position, Vector3.down, 0.05f);
+    }
+
+
+    private void Jump()
+    {
+        // dir.y = jumpForce;
+    }
+
+    // Update is called once per frame
+    void FixedUpdate()
+    {   
+        // if (gameStarted)
+        // {
+        // dir.y += gravity * Time.fixedDeltaTime;
+        // controller.Move(dir * Time.fixedDeltaTime);
+        // }
+    }
+
+
+    private IEnumerator GoStartCoroutine()
+    {
+        // Ждать некоторое время
+        yield return new WaitForSeconds(0.01f); // Здесь 2f - это задержка в секундах, которую вы можете настроить под свои потребности
+        gameStarted = true;
+    }
+
+
+
+
+    private void OnControllerColliderHit(ControllerColliderHit hit)
+    {
+                // Проверяем, столкновение с объектом NPC
+        if (hit.gameObject.CompareTag("npc"))
+        {
+            // Получаем компонент NPC
+            NPCController npc = hit.gameObject.GetComponent<NPCController>();
+
+            // Проверяем, не собран ли уже этот NPC
+            if (!npc.IsCollected)
+            {
+                // Вызываем метод сбора NPC
+                npc.CollectNPC();
+                liveNPCCount++;
+            }
+        }
+    }
+
+    public void NPCdeath()
+    {
+        liveNPCCount--;
+        if (isAlive == false && liveNPCCount == 0)
+            {
+                losePanel.SetActive(true);
+                Camera.main.GetComponent<CameraController>().Camerastop();
+            }
+    }
+
+
+    private void OnTriggerEnter(Collider other)
+    {
+        if (other.gameObject.CompareTag("Coin"))
+        {
+            OnCoinCollected();
+
+            // Уничтожить монетку
+            Destroy(other.gameObject);
+            audioSource.Play();
+
+        }
+        if (other.gameObject.CompareTag("finish"))
+        {
+            Camera.main.GetComponent<CameraController>().MoveCameraInSemicircle();
+        }
+        if (other.gameObject.CompareTag("realfinish"))
+        {
+            // Включить анимацию twist
+            if (anim != null)
+            {
+                anim.SetBool("twist", true);
+            }
+
+            // Остановить игрока
+            // speed = 0;
+
+            NPCController npc = FindObjectOfType<NPCController>(); // Получаем компонент NPCController из текущего объекта
+            if (npc != null) // Проверяем, что компонент был успешно найден
+            {   
+                npc.Twist(); // Вызываем метод Twist()
+            }
+            winPanel.SetActive(true); 
+        }
+        if (other.gameObject.CompareTag("down"))
+        {   
+            if (controller.isGrounded)
+                Jump();
+        }
+        if (other.gameObject.CompareTag("camera_stop"))
+        {   
+
+            Camera.main.GetComponent<CameraController>().Camerastop();
+        }
+
+    }
+
+
+
+    public void OnCoinCollected()
+    {   
+        coins++;
+        coinsText.text = coins.ToString();
+        
+    }
+    
+    private void CollectNPC(NPCController npc)
+    {
+        // Добавляем NPC в список стада
+        npcList.Add(npc);
+
+        // Можно также изменить родителя объекта NPC, чтобы он следовал за персонажем
+        //npc.transform.parent = transform;
+
+        // Здесь вы можете настроить логику, связанную с сбором NPC
+    }
+    private void RemoveNPC(NPCController npc)
+    {
+        // Удаляем NPC из списка стада
+        npcList.Remove(npc);
+
+        // Здесь можно настроить логику удаления NPC, например, уничтожение объекта NPC
+    }
+
+    public void StopAllNPCs()
+    {
+        foreach (var npc in npcList)
+        {
+            npc.Twist();
+        }
+    }
+}
+
+
+
+
+
+
+
